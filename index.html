@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mini Windows93 — Port</title>
+  <style>
+    :root{
+      --bg:#6b8fb3; --task:#222; --accent:#ffcf33; --window:#f2f2f2; --title:#003366;
+      --glass: rgba(255,255,255,0.06);
+    }
+    *{box-sizing:border-box;font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,var(--bg),#4f6f94);overflow:hidden}
+    .desktop{position:relative;width:100%;height:100%;padding:16px;}
+    .icon{width:72px;text-align:center;color:#fff;margin:8px;display:inline-block;cursor:pointer}
+    .icon .glyph{width:72px;height:56px;border-radius:8px;background:var(--glass);display:flex;align-items:center;justify-content:center;margin-bottom:6px;font-weight:700}
+    .taskbar{position:absolute;left:0;right:0;bottom:0;height:40px;background:var(--task);display:flex;align-items:center;padding:0 8px;gap:8px}
+    .start-btn{width:80px;height:28px;background:linear-gradient(#fff,#ddd);border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+    .taskbar .tray{margin-left:auto;color:#ddd;font-size:12px}
+    .window{position:absolute;width:420px;height:260px;background:var(--window);border:3px solid #222;box-shadow:4px 6px 0 rgba(0,0,0,0.4);border-radius:6px;overflow:hidden}
+    .titlebar{height:34px;background:linear-gradient(#e9eef6,#d7e0f0);display:flex;align-items:center;padding:0 8px;gap:8px;color:var(--title);font-weight:700;cursor:move}
+    .titlebar .controls{margin-left:auto;display:flex;gap:6px}
+    .btn{width:20px;height:18px;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;background:#f5f5f5;border:1px solid #aaa;cursor:pointer}
+    .content{padding:12px;height:calc(100% - 34px);overflow:auto;background:linear-gradient(180deg,#fff,#f4f7fb)}
+    .menu{position:absolute;left:8px;bottom:46px;background:#fff;border:2px solid #222;padding:8px;border-radius:6px;box-shadow:4px 6px 0 rgba(0,0,0,0.3);display:none}
+    .menu button{display:block;width:160px;margin:4px 0;padding:8px;border-radius:4px;border:1px solid #aaa;background:linear-gradient(#fff,#eee);cursor:pointer}
+    /* simple retro pixel font look */
+    .pixel{font-family: monospace;letter-spacing:0.5px}
+
+    /* responsive */
+    @media (max-width:520px){.window{width:90%;height:60%}}
+  </style>
+</head>
+<body>
+  <div class="desktop" id="desktop">
+    <div class="icon" data-app="terminal" title="Terminal">
+      <div class="glyph">>&nbsp;_</div>
+      <div class="label pixel">Terminal</div>
+    </div>
+    <div class="icon" data-app="notepad" title="Bloc de notas">
+      <div class="glyph">TXT</div>
+      <div class="label pixel">Bloc</div>
+    </div>
+    <div class="icon" data-app="retro" title="Retro Game">
+      <div class="glyph">PLAY</div>
+      <div class="label pixel">Retro</div>
+    </div>
+
+    <div class="taskbar">
+      <div class="start-btn" id="startBtn">Inicio</div>
+      <div class="tray" id="tray">11:11</div>
+    </div>
+
+    <div class="menu" id="startMenu">
+      <button data-action="open" data-app="terminal">Terminal</button>
+      <button data-action="open" data-app="notepad">Bloc de notas</button>
+      <button data-action="open" data-app="retro">Retro Game</button>
+      <button data-action="about">Acerca</button>
+    </div>
+
+  </div>
+
+  <template id="windowTpl">
+    <div class="window">
+      <div class="titlebar"><span class="title pixel"></span>
+        <div class="controls">
+          <div class="btn" data-action="min">—</div>
+          <div class="btn" data-action="max">?</div>
+          <div class="btn" data-action="close">?</div>
+        </div>
+      </div>
+      <div class="content pixel"></div>
+    </div>
+  </template>
+
+  <script>
+    const desktop = document.getElementById('desktop');
+    const startBtn = document.getElementById('startBtn');
+    const startMenu = document.getElementById('startMenu');
+    const tray = document.getElementById('tray');
+    let z = 10;
+
+    // clock
+    function updateClock(){
+      const d = new Date();
+      const hh = String(d.getHours()).padStart(2,'0');
+      const mm = String(d.getMinutes()).padStart(2,'0');
+      tray.textContent = hh+':'+mm;
+    }
+    updateClock(); setInterval(updateClock,60000);
+
+    // Launchers
+    desktop.addEventListener('dblclick', e=>{
+      const target = e.target.closest('.icon');
+      if(target) openApp(target.dataset.app);
+    });
+    desktop.querySelectorAll('.icon').forEach(ic=> ic.addEventListener('click', ()=> openApp(ic.dataset.app)));
+
+    startBtn.addEventListener('click', ()=>{ startMenu.style.display = startMenu.style.display==='block' ? 'none' : 'block';});
+    document.addEventListener('click', e=>{ if(!e.target.closest('#startBtn') && !e.target.closest('#startMenu')) startMenu.style.display='none';});
+
+    startMenu.addEventListener('click', e=>{
+      const btn = e.target.closest('button'); if(!btn) return;
+      const act = btn.dataset.action;
+      if(act==='open') openApp(btn.dataset.app);
+      if(act==='about') alert('Mini "Windows93" — port ligero. Hecho con flow.');
+      startMenu.style.display='none';
+    });
+
+    function openApp(name){
+      if(name==='terminal') createWindow('Terminal', terminalContent());
+      if(name==='notepad') createWindow('Bloc de notas', notepadContent());
+      if(name==='retro') createWindow('Retro Game', retroContent());
+    }
+
+    function createWindow(title, contentEl){
+      const tpl = document.getElementById('windowTpl');
+      const node = tpl.content.firstElementChild.cloneNode(true);
+      node.style.left = Math.max(20, 40 + Math.random()*200) + 'px';
+      node.style.top = Math.max(20, 40 + Math.random()*120) + 'px';
+      node.style.zIndex = ++z;
+      node.querySelector('.title').textContent = title;
+      const content = node.querySelector('.content');
+      if(typeof contentEl === 'string') content.innerHTML = contentEl;
+      else content.appendChild(contentEl);
+      desktop.appendChild(node);
+      makeDraggable(node);
+
+      // controls
+      node.querySelectorAll('.btn').forEach(b=> b.addEventListener('click', (ev)=>{
+        const a = b.dataset.action;
+        if(a==='close') node.remove();
+        if(a==='min') node.style.display='none';
+        if(a==='max') { node.style.left='20px'; node.style.top='20px'; node.style.width = 'calc(100% - 40px)'; node.style.height = 'calc(100% - 80px)'; }
+      }));
+
+      node.addEventListener('mousedown', ()=> node.style.zIndex = ++z);
+      return node;
+    }
+
+    function makeDraggable(win){
+      const title = win.querySelector('.titlebar');
+      let offsetX=0, offsetY=0, dragging=false;
+      title.addEventListener('mousedown', (e)=>{
+        dragging=true; offsetX = e.clientX - win.offsetLeft; offsetY = e.clientY - win.offsetTop;
+        document.body.style.userSelect='none';
+      });
+      document.addEventListener('mousemove', (e)=>{
+        if(!dragging) return; win.style.left = (e.clientX - offsetX) + 'px'; win.style.top = (e.clientY - offsetY) + 'px';
+      });
+      document.addEventListener('mouseup', ()=>{ dragging=false; document.body.style.userSelect='auto'; });
+    }
+
+    // App contents
+    function terminalContent(){
+      const container = document.createElement('div');
+      const out = document.createElement('pre'); out.className='pixel'; out.style.height='160px'; out.style.overflow='auto'; out.textContent = 'Mini-Terminal\nType: help\n';
+      const form = document.createElement('div');
+      const inp = document.createElement('input'); inp.style.width='100%'; inp.placeholder='comando...';
+      inp.addEventListener('keydown', e=>{
+        if(e.key==='Enter'){ const v=inp.value.trim(); out.textContent += '> '+v+'\n'+runCmd(v)+'\n'; out.scrollTop = out.scrollHeight; inp.value=''; }
+      });
+      form.appendChild(inp);
+      container.appendChild(out); container.appendChild(form);
+      return container;
+    }
+    function runCmd(cmd){
+      if(!cmd) return '';
+      const c = cmd.toLowerCase();
+      if(c==='help') return 'Comandos: help, echo, time, cls';
+      if(c.startsWith('echo ')) return cmd.slice(5);
+      if(c==='time') return new Date().toString();
+      if(c==='cls') return '\n'.repeat(30);
+      return 'Comando no encontrado: '+cmd;
+    }
+
+    function notepadContent(){
+      const ta = document.createElement('textarea'); ta.style.width='100%'; ta.style.height='160px'; ta.placeholder='Escribe lo que quieras...';
+      return ta;
+    }
+
+    function retroContent(){
+      const wrap = document.createElement('div');
+      wrap.style.display='flex'; wrap.style.flexDirection='column'; wrap.style.gap='8px';
+      const btn = document.createElement('button'); btn.textContent='Iniciar demo 2D';
+      const canvas = document.createElement('canvas'); canvas.width=360; canvas.height=160; canvas.style.border='1px solid #000';
+      wrap.appendChild(btn); wrap.appendChild(canvas);
+      let anim=null; btn.addEventListener('click', ()=>{ if(anim) { cancelAnimationFrame(anim); anim=null; btn.textContent='Iniciar demo 2D'; } else { runMiniGame(canvas); btn.textContent='Parar'; }});
+      return wrap;
+    }
+
+    function runMiniGame(canvas){
+      const ctx = canvas.getContext('2d');
+      let x=10, dir=1;
+      function loop(){
+        ctx.fillStyle='#001'; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle='#0f0'; ctx.fillRect(x,60,40,40);
+        x += dir*2; if(x>canvas.width-60) dir=-1; if(x<10) dir=1;
+        requestAnimationFrame(loop);
+      }
+      loop();
+    }
+
+    // small UX: double click on desktop opens 'about' if empty area
+    desktop.addEventListener('dblclick', e=>{
+      if(e.target===desktop) alert('Mini Windows93 — port ligero. Haz click en los iconos o en Inicio.');
+    });
+
+    // open a welcome window on load
+    window.addEventListener('load', ()=>{
+      setTimeout(()=> openApp('terminal'),300);
+    });
+
+  </script>
+</body>
+</html>
