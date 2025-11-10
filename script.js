@@ -31,7 +31,7 @@ function updateNPCs(dt){
       if(n.frameTimer > frameDuration){
         n.frame++;
         n.frameTimer = 0;
-        if(n.frame >= 5){ n.alpha = 0; } // fin de animaciÛn
+        if(n.frame >= 5){ n.alpha = 0; } // fin de animaci√≥n
       }
     }
   }
