@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>GMod 2D — Mapas y NPCs</title>
+<title>GMod 2D — Armas y NPCs</title>
 <style>
 html,body{margin:0;height:100%;font-family:sans-serif;background:#111;color:#eee;}
 #gameWrap{display:flex;height:100vh;gap:10px;padding:10px;box-sizing:border-box;}
@@ -22,42 +22,34 @@ canvas{flex:1;background:#7eaabd;border-radius:6px;display:block;}
     <canvas id="game" width="1400" height="800"></canvas>
   </div>
   <div id="ui">
-    <h1>GMod 2D — NPCs y Mapas</h1>
+    <h1>GMod 2D — Armas y NPCs</h1>
     <div id="tools">
       <button id="spawnBtn" class="btn">Spawn Prop</button>
       <button id="spawnNpcBtn" class="btn">Spawn NPC</button>
-      <button id="toggleGrab" class="btn toggle">Toggle Gravity Gun</button>
+      <button id="toggleGrab" class="btn toggle">Gravity Gun</button>
       <button id="deleteBtn" class="btn">Borrar</button>
       <button id="mapBtn" class="btn">Cargar siguiente mapa</button>
+      <button id="pistolBtn" class="btn">Pistola</button>
+      <button id="rifleBtn" class="btn">Rifle</button>
     </div>
     <div class="stat">Herramienta: <span id="toolName">Ninguna</span></div>
     <div class="stat">Props: <span id="propCount">0</span></div>
     <div class="stat">NPCs: <span id="npcCount">0</span></div>
-    <div class="small">Controles: WASD mover, mouse apuntar, click izq agarrar/lanzar, click der soltar</div>
-    <div style="height:12px"></div>
+    <div class="stat">Arma: <span id="weaponName">Ninguna</span></div>
+    <div class="small">Controles: WASD mover, mouse apuntar, click izq disparar/agarrar</div>
     Zoom: <input id="zoom" type="range" min="0.5" max="1.8" step="0.05" value="1">
   </div>
 </div>
 <script>
-/* --- Setup Canvas --- */
 const canvas=document.getElementById('game');const ctx=canvas.getContext('2d');const DPR=Math.max(1,window.devicePixelRatio||1);
 function resizeCanvas(){canvas.width=Math.floor(canvas.clientWidth*DPR);canvas.height=Math.floor(canvas.clientHeight*DPR);ctx.setTransform(DPR,0,0,DPR,0,0);}
 window.addEventListener('resize',resizeCanvas);resizeCanvas();
 
-/* --- Mapas --- */
-const maps=[
-  {name:"Construct",w:60,h:36,tiles:[],playerSpawn:{x:1920,y:1152},npcSpawns:[{x:1000,y:1000},{x:2200,y:1200}]},
-  {name:"Hangar",w:40,h:30,tiles:[],playerSpawn:{x:1280,y:960},npcSpawns:[{x:900,y:900},{x:1500,y:1000}]}
-];
-// relleno simplificado: 0=grass,1=concrete,2=metal,3=water
-maps.forEach(m=>{m.tiles=new Array(m.w*m.h).fill(0);m.tiles.fill(1,6* m.w+4,30*m.w+28);}); // crude init
-
-let currentMapIndex=0;
-let currentMap=maps[currentMapIndex];
-
-/* --- World & Camera --- */
-let TILE=64;
-let camera={x:currentMap.playerSpawn.x,y:currentMap.playerSpawn.y,zoom:1};
+/* --- World/Camera --- */
+let TILE=64,camera={x:0,y:0,zoom:1};
+let maps=[{name:"Construct",w:60,h:36,tiles:[],playerSpawn:{x:1920,y:1152},npcSpawns:[{x:1000,y:1000},{x:2200,y:1200}]}];
+maps[0].tiles=new Array(maps[0].w*maps[0].h).fill(0);maps[0].tiles.fill(1,6* maps[0].w+4,30*maps[0].w+28);
+let currentMapIndex=0,currentMap=maps[currentMapIndex];
 let world={w:currentMap.w*TILE,h:currentMap.h*TILE};
 
 /* --- Player --- */
@@ -65,41 +57,45 @@ let player={x:currentMap.playerSpawn.x,y:currentMap.playerSpawn.y,angle:0,speed:
 
 /* --- Props --- */
 let props=[],propId=1;
-const MAX_PROPS=180;
+function spawnProp(x,y,w=46,h=46){const pal=['#f97316','#34d399','#60a5fa','#f472b6','#c084fc','#f59e0b']; props.push({id:propId++,x:x,y:y,w:w,h:h,vx:0,vy:0,ang:0,av:0,mass:1,drag:6,color:pal[(Math.random()*pal.length)|0],static:false});}
 
 /* --- NPCs --- */
 let npcs=[],npcId=1;
-function spawnNPC(x,y){
-  npcs.push({id:npcId++,x:x,y:y,vx:0,vy:0,radius:16,color:'#f55',targetX:x,targetY:y});
-}
+function spawnNPC(x,y){npcs.push({id:npcId++,x:x,y:y,radius:16,color:'#f55'});}
+
+/* --- Weapons --- */
+let weapons={
+  none:{name:"Ninguna",damage:0,range:0,color:'#fff',cadence:0},
+  pistol:{name:"Pistola",damage:100,range:400,color:'#ff0',cadence:0.5},
+  rifle:{name:"Rifle",damage:999,range:700,color:'#0f0',cadence:0.15}
+};
+let currentWeapon=weapons.none;
+const weaponNameEl=document.getElementById('weaponName');
 
 /* --- Input --- */
-let keys={},mouse={x:0,y:0,worldX:0,worldY:0,left:false,right:false};
+let keys={},mouse={x:0,y:0,worldX:0,worldY:0,left:false};
 window.addEventListener('keydown',e=>keys[e.key.toLowerCase()]=true);
 window.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
 canvas.addEventListener('mousemove',e=>{
   const r=canvas.getBoundingClientRect();
   mouse.x=(e.clientX-r.left)*(canvas.width/r.width)/DPR;
   mouse.y=(e.clientY-r.top)*(canvas.height/r.height)/DPR;
-  mouse.worldX=screenToWorldX(mouse.x);
-  mouse.worldY=screenToWorldY(mouse.y);
+  mouse.worldX=camera.x-(canvas.clientWidth/2)*camera.zoom+mouse.x*camera.zoom;
+  mouse.worldY=camera.y-(canvas.clientHeight/2)*camera.zoom+mouse.y*camera.zoom;
 });
-canvas.addEventListener('mousedown',e=>{if(e.button===0) mouse.left=true;if(e.button===2) mouse.right=true; handleClick(e);});
-canvas.addEventListener('mouseup',e=>{if(e.button===0) mouse.left=false;if(e.button===2) mouse.right=false;});
+canvas.addEventListener('mousedown',e=>{if(e.button===0) mouse.left=true; handleShoot();});
+canvas.addEventListener('mouseup',e=>{if(e.button===0) mouse.left=false;});
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
-function screenToWorldX(sx){return camera.x-(canvas.clientWidth/2)*camera.zoom+sx*camera.zoom;}
-function screenToWorldY(sy){return camera.y-(canvas.clientHeight/2)*camera.zoom+sy*camera.zoom;}
-function worldToScreenX(wx){return (wx-(camera.x-(canvas.clientWidth/2)*camera.zoom))/camera.zoom;}
-function worldToScreenY(wy){return (wy-(camera.y-(canvas.clientHeight/2)*camera.zoom))/camera.zoom;}
 
-/* --- Tools UI --- */
+/* --- Tools/UI --- */
 let tool='none',held=null;
-const holdingOffset={x:0,y:-48};
 const spawnBtn=document.getElementById('spawnBtn');
 const spawnNpcBtn=document.getElementById('spawnNpcBtn');
 const toggleBtn=document.getElementById('toggleGrab');
 const deleteBtn=document.getElementById('deleteBtn');
 const mapBtn=document.getElementById('mapBtn');
+const pistolBtn=document.getElementById('pistolBtn');
+const rifleBtn=document.getElementById('rifleBtn');
 const toolNameEl=document.getElementById('toolName');
 const propCountEl=document.getElementById('propCount');
 const npcCountEl=document.getElementById('npcCount');
@@ -107,100 +103,91 @@ const zoomInput=document.getElementById('zoom');
 
 spawnBtn.onclick=()=>spawnProp(mouse.worldX,mouse.worldY);
 spawnNpcBtn.onclick=()=>spawnNPC(mouse.worldX,mouse.worldY);
-toggleBtn.onclick=()=>{if(toggleBtn.classList.contains('on')){toggleBtn.classList.remove('on');tool='none';toggleBtn.textContent='Toggle Gravity Gun';}else{toggleBtn.classList.add('on');tool='grab';toggleBtn.textContent='Gravity Gun ON';} updateToolUI();}
-deleteBtn.onclick=()=>{tool='delete';updateToolUI();}
+toggleBtn.onclick=()=>{tool=tool==='grab'?'none':'grab';updateUI();}
+deleteBtn.onclick=()=>{tool='delete';updateUI();}
 mapBtn.onclick=()=>{currentMapIndex=(currentMapIndex+1)%maps.length;loadMap(currentMapIndex);}
+pistolBtn.onclick=()=>{currentWeapon=weapons.pistol;updateUI();}
+rifleBtn.onclick=()=>{currentWeapon=weapons.rifle;updateUI();}
 
-/* --- Spawn & Remove --- */
-function spawnProp(x,y,w=46,h=46){if(props.length>=MAX_PROPS) return;const pal=['#f97316','#34d399','#60a5fa','#f472b6','#c084fc','#f59e0b']; const p={id:propId++,x:x,y:y,w:w,h:h,vx:(Math.random()-0.5)*20,vy:(Math.random()-0.5)*20,ang:0,av:(Math.random()-0.5)*2,mass:Math.max(0.5,(w*h)/3000),drag:6,color:pal[(Math.random()*pal.length)|0],static:false};props.push(p);updateToolUI();return p;}
-function removePropById(id){props=props.filter(p=>p.id!==id);if(held&&held.id===id) held=null;updateToolUI();}
+function updateUI(){toolNameEl.textContent=tool;propCountEl.textContent=props.length;npcCountEl.textContent=npcs.length;weaponNameEl.textContent=currentWeapon.name;}
+zoomInput.oninput=()=>{camera.zoom=parseFloat(zoomInput.value);}
 
 /* --- Map loading --- */
 function loadMap(idx){
-  currentMap=maps[idx];
-  world.w=currentMap.w*TILE;world.h=currentMap.h*TILE;
-  player.x=currentMap.playerSpawn.x; player.y=currentMap.playerSpawn.y;
+  currentMap=maps[idx];world={w:currentMap.w*TILE,h:currentMap.h*TILE};
+  player.x=currentMap.playerSpawn.x;player.y=currentMap.playerSpawn.y;
   npcs=[];currentMap.npcSpawns.forEach(s=>spawnNPC(s.x,s.y));
   props=[]; held=null;
-  camera.x=player.x; camera.y=player.y;
 }
 
-/* --- Click handler --- */
-function handleClick(e){
-  if(e.button===0){
-    if(tool==='delete'){const p=pickPropAt(mouse.worldX,mouse.worldY);if(p) removePropById(p.id);tool='none';updateToolUI();return;}
-    if(tool==='grab'){if(held){const dirx=mouse.worldX-player.x,diry=mouse.worldY-player.y;const mag=Math.hypot(dirx,diry)||1;const nx=dirx/mag,ny=diry/mag;held.static=false;held.vx+=nx*420/held.mass;held.vy+=ny*420/held.mass;held=null;}else{const p=pickPropAt(mouse.worldX,mouse.worldY,48);if(p){held=p;held.static=true;}}}else{const p=pickPropAt(mouse.worldX,mouse.worldY);if(!held&&p){held=p;held.static=true;}else if(held){const dirx=mouse.worldX-player.x,diry=mouse.worldY-player.y;const mag=Math.hypot(dirx,diry)||1;const nx=dirx/mag,ny=diry/mag;held.static=false;held.vx+=nx*420/held.mass;held.vy+=ny*420/held.mass;held=null;}}}
-  if(e.button===2){if(held){held.static=false;held=null;}}
+/* --- Shooting --- */
+let lastShot=0;
+function handleShoot(){
+  const now=performance.now()/1000;
+  if(!mouse.left||currentWeapon===weapons.none||now-lastShot<currentWeapon.cadence) return;
+  lastShot=now;
+  // Raycast simple
+  const dx=mouse.worldX-player.x,dy=mouse.worldY-player.y;
+  const dist=Math.hypot(dx,dy);const nx=dx/dist,ny=dy/dist;
+  for(let t=0;t<currentWeapon.range;t+=8){
+    const px=player.x+nx*t,py=player.y+ny*t;
+    for(let i=npcs.length-1;i>=0;i--){
+      const n=npcs[i];
+      if(Math.hypot(px-n.x,py-n.y)<n.radius){npcs.splice(i,1); break;}
+    }
+    // Opcional: dibujar rayo
+    ctx.strokeStyle=currentWeapon.color;ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(player.x,player.y);ctx.lineTo(px,py);ctx.stroke();
+  }
 }
 
-/* --- Pick prop at pos --- */
-function pickPropAt(wx,wy,r=28){let found=null;let best=r*r+0.0001;for(const p of props){const dx=wx-p.x,dy=wy-p.y;const d2=dx*dx+dy*dy;const half=Math.max(p.w,p.h)/2;if(d2<=Math.max(r*r,half*half)){if(d2<best){best=d2;found=p;}}}return found;}
-
-/* --- Update --- */
+/* --- Update/Render Loop --- */
 let last=performance.now();
 function step(now){const dt=Math.min(0.04,(now-last)/1000);last=now;update(dt);render();requestAnimationFrame(step);}
 requestAnimationFrame(step);
 
-/* --- Update world --- */
 function update(dt){
-  // Player movement
-  let mvx=0,mvy=0;if(keys['w']||keys['arrowup']) mvy-=1;if(keys['s']||keys['arrowdown']) mvy+=1;if(keys['a']||keys['arrowleft']) mvx-=1;if(keys['d']||keys['arrowright']) mvx+=1;const len=Math.hypot(mvx,mvy)||1;player.x+=(mvx/len)*player.speed*dt;player.y+=(mvy/len)*player.speed*dt;
+  // player movement
+  let mvx=0,mvy=0;
+  if(keys['w']) mvy-=1;if(keys['s']) mvy+=1;if(keys['a']) mvx-=1;if(keys['d']) mvx+=1;
+  const len=Math.hypot(mvx,mvy)||1;
+  player.x+=(mvx/len)*player.speed*dt;
+  player.y+=(mvy/len)*player.speed*dt;
   player.angle=Math.atan2(mouse.worldY-player.y,mouse.worldX-player.x);
-  if(held){const targetX=player.x+Math.cos(player.angle)*holdingOffset.y+Math.sin(player.angle)*holdingOffset.x;const targetY=player.y+Math.sin(player.angle)*holdingOffset.y-Math.cos(player.angle)*holdingOffset.x;held.x+=(targetX-held.x)*Math.min(1,12*dt);held.y+=(targetY-held.y)*Math.min(1,12*dt);held.vx=0;held.vy=0;}
 
-  // Props physics
-  for(const p of props){if(!p.static){p.vx*=Math.exp(-p.drag*dt);p.vy*=Math.exp(-p.drag*dt);p.x+=p.vx*dt;p.y+=p.vy*dt;p.ang+=p.av*dt;const hw=p.w/2,hh=p.h/2;if(p.x-hw<0){p.x=hw;p.vx=Math.abs(p.vx)*0.4;}if(p.x+hw>world.w){p.x=world.w-hw;p.vx=-Math.abs(p.vx)*0.4;}if(p.y-hh<0){p.y=hh;p.vy=Math.abs(p.vy)*0.4;}if(p.y+hh>world.h){p.y=world.h-hh;p.vy=-Math.abs(p.vy)*0.4;}}}
+  // camera
+  const camLerp=8*dt;
+  camera.x+=(player.x-camera.x)*camLerp;camera.y+=(player.y-camera.y)*camLerp;
+  const halfCW=(canvas.clientWidth/2)*camera.zoom;const halfCH=(canvas.clientHeight/2)*camera.zoom;
+  camera.x=Math.max(halfCW,Math.min(world.w-halfCW,camera.x));
+  camera.y=Math.max(halfCH,Math.min(world.h-halfCH,camera.y));
 
-  // NPC movement (wander to target)
-  for(const npc of npcs){
-    const dx=npc.targetX-npc.x,dy=npc.targetY-npc.y;
-    const dist=Math.hypot(dx,dy)||1;
-    npc.vx=dx/dist*80;npc.vy=dy/dist*80;
-    npc.x+=npc.vx*dt;npc.y+=npc.vy*dt;
-    if(dist<12){const s=currentMap.npcSpawns[(Math.random()*currentMap.npcSpawns.length)|0]; npc.targetX=s.x;npc.targetY=s.y;}
-  }
-
-  // Camera smooth
-  const camLerp=8*dt; camera.x+=(player.x-camera.x)*camLerp; camera.y+=(player.y-camera.y)*camLerp;
-  const halfCW=(canvas.clientWidth/2)*camera.zoom; const halfCH=(canvas.clientHeight/2)*camera.zoom;
-  camera.x=Math.max(halfCW,Math.min(world.w-halfCW,camera.x)); camera.y=Math.max(halfCH,Math.min(world.h-halfCH,camera.y));
-
-  updateToolUI();
+  updateUI();
 }
 
-/* --- Render --- */
 function render(){
-  ctx.fillStyle='#6ea6b6';ctx.fillRect(0,0,canvas.clientWidth,canvas.clientHeight);
-
+  ctx.clearRect(0,0,canvas.width,canvas.height);
   // tiles
-  const left=camera.x-(canvas.clientWidth/2)*camera.zoom; const top=camera.y-(canvas.clientHeight/2)*camera.zoom;
-  const right=left+canvas.clientWidth*camera.zoom; const bottom=top+canvas.clientHeight*camera.zoom;
+  const left=camera.x-(canvas.clientWidth/2)*camera.zoom;
+  const top=camera.y-(canvas.clientHeight/2)*camera.zoom;
+  const right=left+canvas.clientWidth*camera.zoom;
+  const bottom=top+canvas.clientHeight*camera.zoom;
   const startCol=Math.floor(left/TILE),endCol=Math.ceil(right/TILE);
   const startRow=Math.floor(top/TILE),endRow=Math.ceil(bottom/TILE);
-  for(let r=startRow;r<endRow;r++){if(r<0||r>=currentMap.h) continue; for(let c=startCol;c<endCol;c++){if(c<0||c>=currentMap.w) continue; const t=currentMap.tiles[r*currentMap.w+c]; const wx=c*TILE+TILE/2,wy=r*TILE+TILE/2; const sx=worldToScreenX(wx-TILE/2),sy=worldToScreenY(wy-TILE/2); switch(t){case 0:ctx.fillStyle='#70a37a';break;case 1:ctx.fillStyle='#bfc0c6';break;case 2:ctx.fillStyle='#6b7280';break;case 3:ctx.fillStyle='#5aa0c4';break;default:ctx.fillStyle='#9aa';} ctx.fillRect(sx,sy,TILE/camera.zoom,TILE/camera.zoom);ctx.strokeStyle='rgba(0,0,0,0.06)';ctx.lineWidth=1/camera.zoom;ctx.strokeRect(sx,sy,TILE/camera.zoom,TILE/camera.zoom);}}
+  for(let r=startRow;r<endRow;r++){if(r<0||r>=currentMap.h) continue; for(let c=startCol;c<endCol;c++){if(c<0||c>=currentMap.w) continue; const t=currentMap.tiles[r*currentMap.w+c]; const wx=c*TILE,wy=r*TILE; ctx.fillStyle=t===0?'#70a37a':'#bfc0c6'; ctx.fillRect((wx-left)/camera.zoom,(wy-top)/camera.zoom,TILE/camera.zoom,TILE/camera.zoom);}}
 
   // props
-  for(const p of props){const sx=worldToScreenX(p.x-p.w/2),sy=worldToScreenY(p.y-p.h/2),sw=p.w/camera.zoom,sh=p.h/camera.zoom;ctx.save();ctx.translate(worldToScreenX(p.x),worldToScreenY(p.y));ctx.rotate(p.ang);ctx.translate(-worldToScreenX(p.x),-worldToScreenY(p.y));ctx.fillStyle=p.color;ctx.fillRect(sx,sy,sw,sh);ctx.strokeStyle='rgba(0,0,0,0.25)';ctx.lineWidth=2/camera.zoom;ctx.strokeRect(sx,sy,sw,sh);ctx.restore(); if(p===held||Math.hypot(mouse.worldX-p.x,mouse.worldY-p.y)<28){ctx.strokeStyle='rgba(255,255,255,0.65)';ctx.lineWidth=2/camera.zoom;ctx.strokeRect(sx,sy,sw,sh);}}
+  for(const p of props){ctx.fillStyle=p.color;ctx.fillRect((p.x-p.w/2-left)/camera.zoom,(p.y-p.h/2-top)/camera.zoom,p.w/camera.zoom,p.h/camera.zoom);}
 
   // NPCs
-  for(const n of npcs){ctx.fillStyle=n.color;ctx.beginPath();ctx.arc(worldToScreenX(n.x),worldToScreenY(n.y),n.radius/camera.zoom,0,Math.PI*2);ctx.fill();ctx.strokeStyle='rgba(0,0,0,0.3)';ctx.lineWidth=2/camera.zoom;ctx.stroke();}
+  for(const n of npcs){ctx.fillStyle=n.color;ctx.beginPath();ctx.arc((n.x-left)/camera.zoom,(n.y-top)/camera.zoom,n.radius/camera.zoom,0,Math.PI*2);ctx.fill();}
 
   // player
-  const psx=worldToScreenX(player.x),psy=worldToScreenY(player.y);ctx.save();ctx.translate(psx,psy);ctx.rotate(player.angle);ctx.fillStyle=player.color;ctx.beginPath();ctx.arc(0,0,player.radius/camera.zoom,0,Math.PI*2);ctx.fill();ctx.fillStyle='#222';ctx.beginPath();ctx.moveTo(player.radius/camera.zoom+2,0);ctx.lineTo(player.radius/camera.zoom-6,-6);ctx.lineTo(player.radius/camera.zoom-6,6);ctx.closePath();ctx.fill();ctx.restore();
-
-  // mouse crosshair
-  const msx=mouse.x,msy=mouse.y;ctx.strokeStyle='rgba(0,0,0,0.6)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(msx-8,msy);ctx.lineTo(msx+8,msy);ctx.moveTo(msx,msy-8);ctx.lineTo(msx,msy+8);ctx.stroke();
-
-  // HUD
-  ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillRect(8,8,260,80);ctx.fillStyle='#dfe';ctx.font='12px sans-serif';
-  ctx.fillText(`Map: ${currentMap.name}`,18,24); ctx.fillText(`Player: ${player.x.toFixed(0)}, ${player.y.toFixed(0)}`,18,40);
-  ctx.fillText(`Props: ${props.length}`,18,56); ctx.fillText(`NPCs: ${npcs.length}`,18,72);
+  ctx.fillStyle=player.color;
+  ctx.beginPath();
+  ctx.arc((player.x-left)/camera.zoom,(player.y-top)/camera.zoom,player.radius/camera.zoom,0,Math.PI*2);
+  ctx.fill();
 }
-
-/* --- Helpers UI --- */
-function updateToolUI(){toolNameEl.textContent=tool==='none'?'Ninguna':tool==='grab'?'Gravity Gun':'Borrar';propCountEl.textContent=props.length;npcCountEl.textContent=npcs.length;}
-zoomInput.oninput=()=>{camera.zoom=parseFloat(zoomInput.value);}
-updateToolUI();
 </script>
 </body>
 </html>
